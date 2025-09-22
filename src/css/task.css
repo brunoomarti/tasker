@@ -1,0 +1,151 @@
+.task-card {
+    position: relative;
+    flex: 1 1 auto;
+    border: 1px solid #ffffff;
+    border-radius: var(--main-border-radius);
+    padding: var(--main-padding);
+    background-color: #f7f7f7;
+    color: var(--primary-text-color);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+    height: 3.5rem;
+    overflow: hidden;
+    gap: 1rem;
+}
+
+.task-icon-container {
+    background-color: #a4def9;
+    padding: 0.5rem;
+    aspect-ratio: 1;
+    border-radius: var(--small-border-radius);
+    align-items: center;
+    justify-content: center;
+}
+
+.task-icon-container .material-symbols-outlined {
+    font-size: 1.4rem !important;
+    opacity: 0.7;
+}
+
+.task-body {
+    flex: 1 1 0;
+}
+
+.task-body h3 {
+    color: var(--primary-text-color);
+    font-size: 0.9rem;
+    line-height: 1.1rem;
+    margin: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.task-body .desc {
+    font-size: 0.8rem;
+    line-height: 0.9rem;
+    color: var(--secondary-text-color);
+    margin: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.task-body .task-type {
+    gap: 2px;
+}
+
+.task-body .task-type .material-symbols-outlined,
+.task-body .task-type p {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.7;
+}
+
+.task-body .task-type .material-symbols-outlined {
+    font-size: 0.9rem;
+}
+
+.task-body .task-type p,
+.task-body .task-deadline {
+    font-size: 0.8rem;
+}
+
+.task-body .task-deadline {
+    opacity: 0.7;
+    gap: 3px;
+    justify-content: flex-end;
+}
+
+.task-card .material-symbols-outlined {
+    margin: 0;
+    font-size: 0.9rem;
+}
+
+.task-body .status {
+    border: 1px solid #7d7d7d;
+    border-radius: 30px;
+    aspect-ratio: 1;
+    width: 1.1rem;
+    padding: 0.1rem;
+    align-items: center;
+    justify-content: center;
+}
+
+.task-body .sync-status {
+    opacity: 0.7;
+}
+
+.task-body .sync-status .material-symbols-outlined {
+    margin-right: 3px;
+}
+
+.status-concluida,
+.status-pendente {
+    width: 100%;
+    height: 100%;
+    border-radius: 50px;
+}
+
+.status-concluida {
+    background-color: var(--primary-color);
+}
+
+.status-pendente {
+    background-color: transparent;
+}
+
+.task-card.concluida.anim-reflexo::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: -60%;
+    width: 60%;
+    height: 100%;
+    background: linear-gradient(
+        120deg,
+        rgba(255, 255, 255, 0) 0%,
+        rgba(255, 255, 255, 0.5) 50%,
+        rgba(255, 255, 255, 0) 100%
+    );
+    pointer-events: none;
+    z-index: 2;
+    animation: reflexo-concluida 0.5s ease-in-out 1;
+}
+
+@keyframes reflexo-concluida {
+    0% {
+        left: -60%;
+    }
+    100% {
+        left: 110%;
+    }
+}
+
+.trash-btn {
+    font-size: 1.2rem !important;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s ease;
+}

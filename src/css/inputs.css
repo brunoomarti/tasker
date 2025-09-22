@@ -1,0 +1,62 @@
+input,
+textarea {
+    background-color: rgba(255, 255, 255, 0.75);
+    font-size: 0.9rem;
+    color: var(--primary-text-color);
+    border: 1px solid var(--muted-text-color);
+    transition:
+        border-color 0.25s,
+        box-shadow 0.25s;
+}
+
+input {
+    min-height: 1.8rem;
+    padding: .3rem 1rem;
+    border-radius: 50px;
+}
+
+textarea {
+    min-height: 2rem;
+    resize: vertical;
+    border-radius: 10px;
+    padding: .7rem .7rem;
+}
+
+input:focus,
+input:focus-visible,
+textarea:focus,
+textarea:focus-visible {
+    outline: none;
+    border-color: var(--primary-color) !important;
+    box-shadow: 0 0 0 3px rgba(40, 100, 240, 0.158);
+}
+
+label {
+    text-align: left;
+    font-weight: 500;
+    color: var(--secondary-text-color);
+}
+
+.complete-input {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+input[type="email"],
+input[type="password"] {
+    padding: 10px 12px;
+    border-radius: 5px;
+    border: 1px solid #bfc4d1;
+    font-size: 1rem;
+    transition:
+        border-color 0.2s,
+        box-shadow 0.2s;
+}
+
+input[type="email"]:focus,
+input[type="password"]:focus {
+    border-color: #646cff;
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(100, 108, 255, 0.13);
+}
