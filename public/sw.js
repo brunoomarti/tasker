@@ -80,7 +80,7 @@ async function networkFirst(event, cacheName, shellFallback) {
         const net = await fetch(event.request);
         if (net && net.ok) cachePutLater(event, cacheName, event.request, net);
         return net;
-    } catch () {
+    } catch (err) {
         const cached = await caches.match(event.request);
         if (cached) return cached;
         if (shellFallback) {

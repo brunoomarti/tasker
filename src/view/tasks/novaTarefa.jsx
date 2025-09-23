@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { v4 as uuidv4 } from "uuid";
 import { addTask } from "../../utils/db";
+import { getUserLocation } from "../../utils/native";
 import { syncTasks } from "../../utils/sync";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
@@ -26,8 +27,9 @@ function NovaTarefa() {
     const navigate = useNavigate();
     const { currentUser } = useAuth();
 
-    function buildTask() {
+    async function buildTask() {
         const uid = currentUser?.uid ?? null;
+        const location = await getUserLocation();
         return {
             id: uuidv4(),
             title,
@@ -36,8 +38,10 @@ function NovaTarefa() {
             hora,
             done,
             userId: uid,
+            createdAt: new Date().toISOString(),
             lastUpdated: new Date().toISOString(),
             synced: false,
+            location: location,
         };
     }
 
@@ -83,7 +87,10 @@ function NovaTarefa() {
         }
         try {
             setIsSubmitting(true);
-            await addTask(buildTask());
+
+            const task = await buildTask();
+            await addTask(task);
+
             if (navigator.onLine) await syncTasks();
             await notifyNewTask(titulo, horaStr);
             return true;

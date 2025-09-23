@@ -62,6 +62,8 @@ export async function addTaskToFirebase(task, userId) {
         userId: task.userId ?? userId ?? null,
         descricao: task.descricao ?? "",
         data: task.data,
+        createdAt: task.createdAt ?? serverTimestamp(),
+        createdAtServer: serverTimestamp(),
         lastUpdated: serverTimestamp(),
         synced: true,
     };

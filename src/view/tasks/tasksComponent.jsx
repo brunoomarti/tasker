@@ -15,6 +15,7 @@ import {
 import { syncTasks } from "../../utils/sync";
 import { useAuth } from "../../contexts/AuthContext";
 import ConfirmDeleteModal from "../components/modal/confirmDeleteModal";
+import { getAddressCached } from "../../utils/geocode";
 
 const SWIPE_LOCK_X = 80;
 const DRAG_MAX_X = 90;
@@ -22,14 +23,17 @@ const DRAG_MAX_X = 90;
 function TaskRow({
     task,
     isOpen,
+    isExpanded,
     flashingId,
     delayId,
     onToggleDone,
     onOpenSwipe,
     onCloseSwipe,
     onAskDelete,
+    onToggleExpand,
 }) {
     const x = useMotionValue(0);
+    const draggingRef = useRef(false);
 
     useEffect(() => {
         const controls = animate(x, isOpen ? SWIPE_LOCK_X : 0, {
@@ -57,6 +61,7 @@ function TaskRow({
     }, [task.done, opacityMV]);
 
     function onDragStart() {
+        draggingRef.current = true;
         onOpenSwipe(null);
     }
 
@@ -74,10 +79,70 @@ function TaskRow({
 
         if (shouldOpen) onOpenSwipe(task.id);
         else onCloseSwipe();
+        setTimeout(() => (draggingRef.current = false), 0);
     }
+
+    function toDate(value) {
+        if (!value) return null;
+        if (typeof value === "string") return new Date(value);
+        if (value?.toDate) return value.toDate();
+        if (value?.seconds) return new Date(value.seconds * 1000);
+        return null;
+    }
+
+    const createdAtDate = toDate(task.createdAt || task.createdAtServer);
+    const createdAtStr = createdAtDate
+        ? createdAtDate.toLocaleString("pt-BR", {
+              dateStyle: "short",
+              timeStyle: "short",
+          })
+        : "—";
+
+    const [addr, setAddr] = useState(null);
+    const [addrStatus, setAddrStatus] = useState("idle");
+
+    useEffect(() => {
+        let active = true;
+        async function load() {
+            if (!isExpanded || !task?.location?.lat || !task?.location?.lng)
+                return;
+
+            if (!navigator.onLine) {
+                if (active) setAddrStatus("offline");
+                return;
+            }
+
+            setAddrStatus("loading");
+            const a = await getAddressCached(
+                task.location.lat,
+                task.location.lng
+            );
+            if (!active) return;
+
+            if (a) {
+                setAddr(a);
+                setAddrStatus("done");
+            } else {
+                setAddrStatus("error");
+            }
+        }
+
+        load();
+
+        function onOnline() {
+            if (isExpanded) load();
+        }
+        window.addEventListener("online", onOnline);
+
+        return () => {
+            active = false;
+            window.removeEventListener("online", onOnline);
+        };
+    }, [isExpanded, task?.location?.lat, task?.location?.lng]);
 
     return (
         <motion.div
+            data-taskid={task.id}
             layout="position"
             initial={false}
             style={{ position: "relative", zIndex: task.done ? 0 : 1 }}
@@ -124,7 +189,7 @@ function TaskRow({
                     flashingId === task.id ? "anim-reflexo" : ""
                 } d-flex flex-row justify-space-between gap-5`}
                 initial={false}
-                style={{ x, opacity: opacityMV }}
+                style={{ x, opacity: opacityMV, overflow: "hidden" }}
                 drag="x"
                 dragElastic={0}
                 dragMomentum={false}
@@ -132,6 +197,11 @@ function TaskRow({
                 onDragStart={onDragStart}
                 onDragEnd={onDragEnd}
                 onPointerDown={(e) => e.stopPropagation()}
+                whileTap={{ backgroundColor: "#ececec" }}
+                transition={{
+                    backgroundColor: { duration: 0.12 },
+                    scale: { duration: 0.06 },
+                }}
             >
                 <div className="task-icon-container d-flex">
                     <span className="material-symbols-outlined">
@@ -139,10 +209,14 @@ function TaskRow({
                     </span>
                 </div>
 
-                <div className="task-body d-flex flex-row gap-5">
-                    <div
-                        className="d-flex flex-column gap-5 justify-space-between"
-                        style={{ flex: "1 1 auto" }}
+                <div className="task-body d-flex flex-row gap-10 overflow-hidden justify-space-between overflow-hidden">
+                    <motion.div
+                        className="task-left d-flex flex-column gap-5 justify-space-between overflow-hidden"
+                        onTap={(e) => {
+                            e.stopPropagation();
+                            if (draggingRef.current) return;
+                            onToggleExpand(task.id);
+                        }}
                     >
                         <div className="d-flex flex-column">
                             <div className="d-flex flex-row align-items-center">
@@ -169,15 +243,77 @@ function TaskRow({
                                     <em>Autodescritiva</em>
                                 )}
                             </p>
+
+                            <AnimatePresence initial={false}>
+                                {isExpanded && (
+                                    <motion.div
+                                        key="extra"
+                                        initial={{ height: 0, opacity: 0, marginTop: 0 }}
+                                        animate={{ height: "auto", opacity: 1, marginTop: 12 }}
+                                        exit={{ height: 0, opacity: 0, marginTop: 0 }}
+                                        transition={{ duration: 0.2 }}
+                                        style={{ overflow: "hidden" }}
+                                        className="task-extra"
+                                    >
+                                        <div className="d-flex flex-column gap-5 meta">
+                                            <p className="d-flex flex-row align-items-center">
+                                                <span
+                                                    className="material-symbols-outlined"
+                                                    style={{ marginRight: 4 }}
+                                                >
+                                                    event
+                                                </span>
+                                                Criada em: {createdAtStr}
+                                            </p>
+                                            {task.location ? (
+                                                <p className="d-flex flex-row align-items-start overflow-hidden">
+                                                    <span
+                                                        className="material-symbols-outlined"
+                                                        style={{
+                                                            marginRight: 4,
+                                                            paddingTop: 1,
+                                                        }}
+                                                    >
+                                                        location_on
+                                                    </span>
+                                                    {addrStatus === "loading" &&
+                                                        "Buscando endereço..."}
+                                                    {addrStatus === "offline" &&
+                                                        "Endereço indisponível (offline)"}
+                                                    {addrStatus === "error" &&
+                                                        "Endereço não encontrado"}
+                                                    {addrStatus === "done" && (
+                                                        <span className="address-text">
+                                                            {addr}
+                                                        </span>
+                                                    )}
+                                                </p>
+                                            ) : (
+                                                <p className="d-flex flex-row align-items-center">
+                                                    <span
+                                                        className="material-symbols-outlined"
+                                                        style={{
+                                                            marginRight: 4,
+                                                        }}
+                                                    >
+                                                        location_off
+                                                    </span>
+                                                    Sem localização
+                                                </p>
+                                            )}
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
                         </div>
                         <div className="d-flex flex-row task-type">
-                            <p>Tipo</p>
+                            <p>Tarefa individual</p>
                         </div>
-                    </div>
+                    </motion.div>
 
                     <div
-                        className="d-flex flex-column justify-space-between align-items-right"
-                        style={{ flex: "1 1 0" }}
+                        className="task-right d-flex flex-column justify-space-between overflow-hidden"
+                        onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
                     >
                         <p className="d-flex flex-row align-items-center task-deadline justify-end">
                             <span className="material-symbols-outlined">
@@ -188,7 +324,7 @@ function TaskRow({
 
                         <div
                             className="d-flex status justify-end"
-                            onClick={() => onToggleDone(task.id)}
+                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggleDone(task.id); }}
                             style={{ cursor: "pointer" }}
                             title={
                                 task.done
@@ -213,6 +349,7 @@ function TaskRow({
 
 function Tasks() {
     const [tasks, setTasks] = useState([]);
+    const [expandedId, setExpandedId] = useState(null);
     const [flashingId, setFlashingId] = useState(null);
     const [delayId, setDelayId] = useState(null);
     const flashTimerRef = useRef(null);
@@ -233,15 +370,44 @@ function Tasks() {
     useEffect(() => {
         fetchTasks();
         if (navigator.onLine) syncAndReload();
-        window.addEventListener("online", syncAndReload);
-        window.addEventListener("offline", fetchTasks);
+
+        function onOnline() {
+            syncAndReload();
+        }
+        function onOffline() {
+            fetchTasks();
+        }
+
+        window.addEventListener("online", onOnline);
+        window.addEventListener("offline", onOffline);
+
         return () => {
-            window.removeEventListener("online", syncAndReload);
-            window.removeEventListener("offline", fetchTasks);
+            window.removeEventListener("online", onOnline);
+            window.removeEventListener("offline", onOffline);
             if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
             if (delayTimerRef.current) clearTimeout(delayTimerRef.current);
         };
     }, [currentUser?.uid]);
+
+    useEffect(() => {
+        if (!openSwipeId) return;
+
+        function handleGlobalPointerDown(e) {
+            const el = e.target.closest("[data-taskid]");
+            if (el && el.dataset.taskid === openSwipeId) return;
+            setOpenSwipeId(null);
+        }
+
+        document.addEventListener("pointerdown", handleGlobalPointerDown, {
+            capture: true,
+        });
+        return () =>
+            document.removeEventListener(
+                "pointerdown",
+                handleGlobalPointerDown,
+                { capture: true }
+            );
+    }, [openSwipeId]);
 
     async function syncAndReload() {
         await syncTasks();
@@ -330,12 +496,7 @@ function Tasks() {
     }
 
     return (
-        <div
-            className="d-flex flex-column gap-10 align-left"
-            onPointerDown={() => {
-                if (openSwipeId) setOpenSwipeId(null);
-            }}
-        >
+        <div className="d-flex flex-column gap-10 align-left">
             {tasks.length === 0 && (
                 <p className="desc">Nenhuma tarefa encontrada.</p>
             )}
@@ -346,13 +507,17 @@ function Tasks() {
                         key={task.id}
                         task={task}
                         isOpen={openSwipeId === task.id}
+                        isExpanded={expandedId === task.id}
                         flashingId={flashingId}
                         delayId={delayId}
                         onToggleDone={toggleDone}
+                        onToggleExpand={(id) =>
+                            setExpandedId((prev) => (prev === id ? null : id))
+                        }
                         onOpenSwipe={(id) => {
-                            // id = null → fecha; id = taskId → abre
                             if (!id) setOpenSwipeId(null);
                             else setOpenSwipeId(id);
+                            setExpandedId(null);
                         }}
                         onCloseSwipe={() => setOpenSwipeId(null)}
                         onAskDelete={(id) => askDelete(id)}
