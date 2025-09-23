@@ -7,7 +7,7 @@ import App from "./App.jsx";
 import Home from "./home.jsx";
 import { Dashboard } from "./dashboard.jsx";
 import { LogIn } from "./logIn.jsx";
-import { Cadastro } from "./Cadastro.jsx";
+import { Cadastro } from "./cadastro.jsx";
 import { NotFound } from "./notFound";
 import NovaTarefa from "./view/tasks/novaTarefa.jsx";
 import Shell from "./Shell";
@@ -66,3 +66,34 @@ createRoot(document.getElementById("root")).render(
         </AuthProvider>
     </StrictMode>
 );
+
+if ("serviceWorker" in navigator) {
+    window.addEventListener("load", async () => {
+        try {
+            const regs = await navigator.serviceWorker.getRegistrations();
+            for (const reg of regs) {
+                const url = new URL(
+                    reg.active?.scriptURL ||
+                        reg.waiting?.scriptURL ||
+                        reg.installing?.scriptURL ||
+                        "",
+                    location.href
+                );
+                if (url.pathname !== "/sw.js") {
+                    await reg.unregister();
+                }
+            }
+
+            const reg = await navigator.serviceWorker.register("/sw.js", {
+                scope: "/",
+            });
+            console.log("Service Worker registrado. Escopo:", reg.scope);
+
+            navigator.serviceWorker.addEventListener("message", (evt) => {
+                console.log("Mensagem do SW:", evt.data);
+            });
+        } catch (err) {
+            console.error("Falha ao registrar Service Worker:", err);
+        }
+    });
+}

@@ -3,6 +3,7 @@ import {
     getAuth,
     signInWithEmailAndPassword,
     createUserWithEmailAndPassword,
+    updateProfile,
 } from "firebase/auth";
 import {
     getFirestore,
@@ -19,6 +20,7 @@ import {
 } from "firebase/firestore";
 
 const TASKS_COLLECTION = "tasks";
+const USERS_COLLECTION = "users";
 
 const firebaseConfig = {
     apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -38,8 +40,20 @@ export function logIn(email, password) {
     return signInWithEmailAndPassword(auth, email, password);
 }
 
-export function register(email, password) {
-    return createUserWithEmailAndPassword(auth, email, password);
+export async function register(email, password, name) {
+    const cred = await createUserWithEmailAndPassword(auth, email, password);
+    await updateProfile(cred.user, { displayName: name });
+    await setDoc(
+        doc(db, USERS_COLLECTION, cred.user.uid),
+        {
+            name,
+            email: cred.user.email,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+    );
+    return cred.user;
 }
 
 export async function addTaskToFirebase(task, userId) {

@@ -7,19 +7,18 @@ textarea {
     transition:
         border-color 0.25s,
         box-shadow 0.25s;
+    border-radius: 8px;
 }
 
 input {
     min-height: 1.8rem;
-    padding: .3rem 1rem;
-    border-radius: 50px;
+    padding: 0.4rem 1rem;
 }
 
 textarea {
     min-height: 2rem;
     resize: vertical;
-    border-radius: 10px;
-    padding: .7rem .7rem;
+    padding: 0.7rem 0.7rem;
 }
 
 input:focus,
@@ -41,22 +40,4 @@ label {
     display: flex;
     flex-direction: column;
     gap: 2px;
-}
-
-input[type="email"],
-input[type="password"] {
-    padding: 10px 12px;
-    border-radius: 5px;
-    border: 1px solid #bfc4d1;
-    font-size: 1rem;
-    transition:
-        border-color 0.2s,
-        box-shadow 0.2s;
-}
-
-input[type="email"]:focus,
-input[type="password"]:focus {
-    border-color: #646cff;
-    outline: none;
-    box-shadow: 0 0 0 2px rgba(100, 108, 255, 0.13);
 }
