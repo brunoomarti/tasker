@@ -16,13 +16,17 @@ import { syncTasks } from "../../utils/sync";
 import { useAuth } from "../../contexts/AuthContext";
 import ConfirmDeleteModal from "../components/modal/confirmDeleteModal";
 import { getAddressCached } from "../../utils/geocode";
+import { exportTask, copyTaskToClipboard } from "../../utils/native";
+import { createPortal } from "react-dom";
 
 const SWIPE_LOCK_X = 80;
 const DRAG_MAX_X = 90;
+const SWIPE_LOCK_LEFT = -80;
 
 function TaskRow({
     task,
     isOpen,
+    openDir,
     isExpanded,
     flashingId,
     delayId,
@@ -34,21 +38,36 @@ function TaskRow({
 }) {
     const x = useMotionValue(0);
     const draggingRef = useRef(false);
+    const [menuOpen, setMenuOpen] = useState(false);
+    const moreBtnRef = useRef(null);
+    const [menuPos, setMenuPos] = useState({ top: 0, right: 0 });
+    const menuRef = useRef(null);
 
     useEffect(() => {
-        const controls = animate(x, isOpen ? SWIPE_LOCK_X : 0, {
-            duration: 0.2,
-        });
+        const target = isOpen
+            ? openDir === "left"
+                ? SWIPE_LOCK_LEFT
+                : SWIPE_LOCK_X
+            : 0;
+        const controls = animate(x, target, { duration: 0.2 });
         return controls.stop;
-    }, [isOpen, x]);
+    }, [isOpen, openDir, x]);
 
-    const progress = useTransform(x, [0, SWIPE_LOCK_X], [0, 1]);
-    const trashWidth = useTransform(progress, [0, 1], [48, 70]);
-    const trashRadius = useTransform(progress, [0, 1], [24, 16]);
-    const trashOpacity = useTransform(progress, [0, 1], [0, 1]);
-    const trashHeight = useTransform(progress, [0, 1], [90, 98]);
+    const progressRight = useTransform(x, [0, SWIPE_LOCK_X], [0, 1]);
+    const trashWidth = useTransform(progressRight, [0, 1], [48, 70]);
+    const trashRadius = useTransform(progressRight, [0, 1], [24, 16]);
+    const trashOpacity = useTransform(progressRight, [0, 1], [0, 1]);
+    const trashHeight = useTransform(progressRight, [0, 1], [90, 98]);
+
+    const progressLeft = useTransform(x, [0, -SWIPE_LOCK_X], [0, 1]);
+    const moreWidth = useTransform(progressLeft, [0, 1], [48, 70]);
+    const moreRadius = useTransform(progressLeft, [0, 1], [24, 16]);
+    const moreOpacity = useTransform(progressLeft, [0, 1], [0, 1]);
+    const moreHeight = useTransform(progressLeft, [0, 1], [90, 98]);
 
     const opacityMV = useMotionValue(task.done ? 0.7 : 1);
+
+    const dragStartOpenDirRef = useRef(null);
 
     useEffect(() => {
         if (task.done) {
@@ -62,6 +81,8 @@ function TaskRow({
 
     function onDragStart() {
         draggingRef.current = true;
+        dragStartOpenDirRef.current = isOpen ? openDir : null;
+        setMenuOpen(false);
         onOpenSwipe(null);
     }
 
@@ -69,18 +90,81 @@ function TaskRow({
         const current = x.get();
         const v = info.velocity.x || 0;
 
-        const shouldOpen =
+        let openRight =
             current > SWIPE_LOCK_X * 0.5 ||
             (current > SWIPE_LOCK_X * 0.25 && v > 250);
 
-        const target = shouldOpen ? SWIPE_LOCK_X : 0;
+        let openLeft =
+            current < SWIPE_LOCK_LEFT * 0.5 ||
+            (current < SWIPE_LOCK_LEFT * 0.25 && v < -250);
+
+        const startedDir = dragStartOpenDirRef.current;
+        if (startedDir === "right") openLeft = false;
+        if (startedDir === "left") openRight = false;
+
+        let target = 0;
+        if (openRight) target = SWIPE_LOCK_X;
+        else if (openLeft) target = SWIPE_LOCK_LEFT;
 
         animate(x, target, { type: "spring", stiffness: 700, damping: 40 });
 
-        if (shouldOpen) onOpenSwipe(task.id);
+        if (openRight) onOpenSwipe(task.id, "right");
+        else if (openLeft) onOpenSwipe(task.id, "left");
         else onCloseSwipe();
-        setTimeout(() => (draggingRef.current = false), 0);
+
+        setTimeout(() => {
+            draggingRef.current = false;
+            dragStartOpenDirRef.current = null;
+        }, 0);
     }
+
+    useEffect(() => {
+        if (!isOpen || openDir !== "left") setMenuOpen(false);
+    }, [isOpen, openDir]);
+
+    function updateMenuPos() {
+        const btn = moreBtnRef.current;
+        if (!btn) return;
+
+        const r = btn.getBoundingClientRect();
+        const pad = 24;
+        const gap = 8;
+        const menuH = menuRef.current?.offsetHeight || 0;
+
+        let top = r.bottom + gap;
+
+        if (top + menuH > window.innerHeight - pad) {
+            top = Math.max(pad, r.top - gap - menuH);
+        }
+
+        setMenuPos({ top, right: pad });
+    }
+
+    useEffect(() => {
+        if (menuOpen) requestAnimationFrame(updateMenuPos);
+    }, [menuOpen]);
+
+    useEffect(() => {
+        if (!menuOpen) return;
+        function onReflow() {
+            updateMenuPos();
+        }
+        window.addEventListener("resize", onReflow);
+        window.addEventListener("scroll", onReflow, true);
+        return () => {
+            window.removeEventListener("resize", onReflow);
+            window.removeEventListener("scroll", onReflow, true);
+        };
+    }, [menuOpen]);
+
+    useEffect(() => {
+        if (!menuOpen) return;
+        const prev = document.body.style.overflow;
+        document.body.style.overflow = "hidden";
+        return () => {
+            document.body.style.overflow = prev;
+        };
+    }, [menuOpen]);
 
     function toDate(value) {
         if (!value) return null;
@@ -115,7 +199,7 @@ function TaskRow({
             setAddrStatus("loading");
             const a = await getAddressCached(
                 task.location.lat,
-                task.location.lng
+                task.location.lng,
             );
             if (!active) return;
 
@@ -140,12 +224,50 @@ function TaskRow({
         };
     }, [isExpanded, task?.location?.lat, task?.location?.lng]);
 
+    const handleExport = async (e) => {
+        e.stopPropagation();
+        try {
+            await exportTask([task]);
+        } catch (err) {
+            try {
+                await navigator.clipboard.writeText(
+                    JSON.stringify(task, null, 2),
+                );
+            } catch (err2) {
+                alert("Não foi possível exportar a tarefa.");
+                console.error("Export falhou:", err, "Clipboard falhou:", err2);
+            }
+        } finally {
+            setMenuOpen(false);
+        }
+    };
+
+    const handleCopyToClipboard = async (e) => {
+        e.stopPropagation();
+        try {
+            const ok = await copyTaskToClipboard([task]);
+            if (!ok) {
+                alert("Não foi possível copiar a tarefa.");
+            } else {
+                console.log("Copiado para a área de transferência");
+            }
+        } catch (err) {
+            alert("Não foi possível copiar a tarefa.");
+            console.error("Copiar falhou:", err);
+        } finally {
+            setMenuOpen(false);
+        }
+    };
+
     return (
         <motion.div
             data-taskid={task.id}
             layout="position"
             initial={false}
-            style={{ position: "relative", zIndex: task.done ? 0 : 1 }}
+            style={{
+                position: "relative",
+                zIndex: menuOpen ? 10001 : task.done ? 0 : 1,
+            }}
             transition={{ layout: { delay: delayId ? 0.4 : 0 } }}
         >
             <div
@@ -155,7 +277,8 @@ function TaskRow({
                     inset: 0,
                     display: task.done && !isOpen ? "none" : "flex",
                     alignItems: "center",
-                    pointerEvents: isOpen ? "auto" : "none",
+                    pointerEvents:
+                        isOpen && openDir === "right" ? "auto" : "none",
                 }}
                 onPointerDown={(e) => e.stopPropagation()}
             >
@@ -183,6 +306,150 @@ function TaskRow({
                 </motion.button>
             </div>
 
+            <div
+                className="options-layer"
+                style={{
+                    position: "absolute",
+                    inset: 0,
+                    display: task.done && !isOpen ? "none" : "flex",
+                    alignItems: "center",
+                    justifyContent: "flex-end",
+                    pointerEvents:
+                        isOpen && openDir === "left" ? "auto" : "none",
+                }}
+                onPointerDown={(e) => e.stopPropagation()}
+            >
+                <div style={{ position: "relative" }}>
+                    <motion.button
+                        ref={moreBtnRef}
+                        className="more-btn"
+                        title="Mais opções"
+                        aria-haspopup="menu"
+                        aria-expanded={undefined}
+                        style={{
+                            backgroundColor: "#F7F7F7",
+                            color: "#333",
+                            border: "1px solid white",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            cursor: "pointer",
+                            padding: "0.5rem",
+                            fontSize: "1.2rem",
+                            height: moreHeight,
+                            width: moreWidth,
+                            borderRadius: moreRadius,
+                            opacity: moreOpacity,
+                        }}
+                        onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (!menuOpen) updateMenuPos();
+                            setMenuOpen((s) => !s);
+                        }}
+                    >
+                        <span className="material-symbols-outlined">
+                            more_vert
+                        </span>
+                    </motion.button>
+                </div>
+            </div>
+
+            {menuOpen &&
+                createPortal(
+                    <>
+                        {/* Backdrop fecha o menu */}
+                        <div
+                            onClick={() => setMenuOpen(false)}
+                            style={{
+                                position: "fixed",
+                                inset: 0,
+                                background: "rgba(0,0,0,0.25)",
+                                backdropFilter: "blur(1px)",
+                                zIndex: 9000,
+                            }}
+                        />
+
+                        <AnimatePresence>
+                            <motion.div
+                                key="more-menu-portal"
+                                ref={menuRef}
+                                initial={{ opacity: 0, y: -6 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: -6 }}
+                                transition={{ duration: 0.12 }}
+                                role="menu"
+                                data-menu-root="1"
+                                onClick={(e) => e.stopPropagation()}
+                                style={{
+                                    position: "fixed",
+                                    top: menuPos.top,
+                                    right: menuPos.right,
+                                    minWidth: 180,
+                                    background: "#f7f7f7",
+                                    border: "1px solid white",
+                                    borderRadius: 8,
+                                    padding: 8,
+                                    boxShadow: "0 6px 20px rgba(0,0,0,0.10)",
+                                    zIndex: 10000,
+                                    transformOrigin: "top right",
+                                }}
+                            >
+                                <button
+                                    type="button"
+                                    role="menuitem"
+                                    className="menu-item"
+                                    style={{
+                                        width: "100%",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: 8,
+                                        padding: "8px 10px",
+                                        background: "transparent",
+                                        border: "none",
+                                        cursor: "pointer",
+                                        borderRadius: 6,
+                                        color: "var(--primary-text-color)",
+                                        fontSize: 14,
+                                    }}
+                                    onClick={handleExport}
+                                >
+                                    <span className="material-symbols-outlined">
+                                        file_export
+                                    </span>
+                                    Exportar tarefa
+                                </button>
+
+                                <button
+                                    type="button"
+                                    role="menuitem"
+                                    className="menu-item"
+                                    style={{
+                                        width: "100%",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: 8,
+                                        padding: "8px 10px",
+                                        background: "transparent",
+                                        border: "none",
+                                        cursor: "pointer",
+                                        borderRadius: 6,
+                                        color: "var(--primary-text-color)",
+                                        fontSize: 14,
+                                    }}
+                                    onClick={handleCopyToClipboard}
+                                >
+                                    <span className="material-symbols-outlined">
+                                        content_copy
+                                    </span>
+                                    Copiar informações
+                                </button>
+                            </motion.div>
+                        </AnimatePresence>
+                    </>,
+                    document.body,
+                )}
+
             <motion.div
                 layout
                 className={`task-card ${task.done ? "concluida" : ""} ${
@@ -193,7 +460,7 @@ function TaskRow({
                 drag="x"
                 dragElastic={0}
                 dragMomentum={false}
-                dragConstraints={{ left: 0, right: DRAG_MAX_X }}
+                dragConstraints={{ left: -DRAG_MAX_X, right: DRAG_MAX_X }}
                 onDragStart={onDragStart}
                 onDragEnd={onDragEnd}
                 onPointerDown={(e) => e.stopPropagation()}
@@ -248,9 +515,21 @@ function TaskRow({
                                 {isExpanded && (
                                     <motion.div
                                         key="extra"
-                                        initial={{ height: 0, opacity: 0, marginTop: 0 }}
-                                        animate={{ height: "auto", opacity: 1, marginTop: 12 }}
-                                        exit={{ height: 0, opacity: 0, marginTop: 0 }}
+                                        initial={{
+                                            height: 0,
+                                            opacity: 0,
+                                            marginTop: 0,
+                                        }}
+                                        animate={{
+                                            height: "auto",
+                                            opacity: 1,
+                                            marginTop: 12,
+                                        }}
+                                        exit={{
+                                            height: 0,
+                                            opacity: 0,
+                                            marginTop: 0,
+                                        }}
                                         transition={{ duration: 0.2 }}
                                         style={{ overflow: "hidden" }}
                                         className="task-extra"
@@ -313,7 +592,10 @@ function TaskRow({
 
                     <div
                         className="task-right d-flex flex-column justify-space-between overflow-hidden"
-                        onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                        onPointerDown={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                        }}
                     >
                         <p className="d-flex flex-row align-items-center task-deadline justify-end">
                             <span className="material-symbols-outlined">
@@ -324,7 +606,11 @@ function TaskRow({
 
                         <div
                             className="d-flex status justify-end"
-                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggleDone(task.id); }}
+                            onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                onToggleDone(task.id);
+                            }}
                             style={{ cursor: "pointer" }}
                             title={
                                 task.done
@@ -357,6 +643,7 @@ function Tasks() {
     const { currentUser } = useAuth();
 
     const [openSwipeId, setOpenSwipeId] = useState(null);
+    const [openSwipeDir, setOpenSwipeDir] = useState(null);
     const [confirmId, setConfirmId] = useState(null);
 
     const todayYMD = () => {
@@ -393,9 +680,18 @@ function Tasks() {
         if (!openSwipeId) return;
 
         function handleGlobalPointerDown(e) {
+            if (
+                e.target.closest("[data-menu-root='1']") ||
+                e.target.closest(".more-btn")
+            ) {
+                return;
+            }
+
             const el = e.target.closest("[data-taskid]");
             if (el && el.dataset.taskid === openSwipeId) return;
+
             setOpenSwipeId(null);
+            setOpenSwipeDir(null);
         }
 
         document.addEventListener("pointerdown", handleGlobalPointerDown, {
@@ -405,7 +701,7 @@ function Tasks() {
             document.removeEventListener(
                 "pointerdown",
                 handleGlobalPointerDown,
-                { capture: true }
+                { capture: true },
             );
     }, [openSwipeId]);
 
@@ -507,6 +803,7 @@ function Tasks() {
                         key={task.id}
                         task={task}
                         isOpen={openSwipeId === task.id}
+                        openDir={openSwipeDir}
                         isExpanded={expandedId === task.id}
                         flashingId={flashingId}
                         delayId={delayId}
@@ -514,12 +811,20 @@ function Tasks() {
                         onToggleExpand={(id) =>
                             setExpandedId((prev) => (prev === id ? null : id))
                         }
-                        onOpenSwipe={(id) => {
-                            if (!id) setOpenSwipeId(null);
-                            else setOpenSwipeId(id);
+                        onOpenSwipe={(id, dir) => {
+                            if (!id) {
+                                setOpenSwipeId(null);
+                                setOpenSwipeDir(null);
+                            } else {
+                                setOpenSwipeId(id);
+                                setOpenSwipeDir(dir || "right");
+                            }
                             setExpandedId(null);
                         }}
-                        onCloseSwipe={() => setOpenSwipeId(null)}
+                        onCloseSwipe={() => {
+                            setOpenSwipeId(null);
+                            setOpenSwipeDir(null);
+                        }}
                         onAskDelete={(id) => askDelete(id)}
                     />
                 ))}
