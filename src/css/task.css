@@ -4,7 +4,7 @@
     border: 1px solid #ffffff;
     border-radius: var(--main-border-radius);
     padding: var(--main-padding);
-    background-color: #f7f7f7;
+    background-color: #fafafa;
     color: var(--primary-text-color);
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
     min-height: 3.5rem;
@@ -55,7 +55,7 @@
 .task-body h3 {
     color: var(--primary-text-color);
     font-size: 0.9rem;
-    line-height: 1.1rem;
+    line-height: 1rem;
     margin: 0;
     white-space: nowrap;
     overflow: hidden;
@@ -78,6 +78,16 @@
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
+}
+
+.task-card.expanded .task-body h3 {
+    white-space: normal; /* libera quebra */
+    display: -webkit-box; /* enable line clamp */
+    -webkit-line-clamp: 2; /* até 2 linhas */
+    -webkit-box-orient: vertical;
+    overflow: hidden; /* esconde o resto */
+    text-overflow: ellipsis; /* retém reticências no fim */
+    line-height: 1rem; /* opcional: ligeiro ajuste */
 }
 
 .task-extra {

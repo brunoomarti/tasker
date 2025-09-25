@@ -4,6 +4,7 @@ import {
     signInWithEmailAndPassword,
     createUserWithEmailAndPassword,
     updateProfile,
+    signOut,
 } from "firebase/auth";
 import {
     getFirestore,
@@ -38,6 +39,10 @@ export const auth = getAuth(app);
 
 export function logIn(email, password) {
     return signInWithEmailAndPassword(auth, email, password);
+}
+
+export function logOut() {
+    return signOut(auth);
 }
 
 export async function register(email, password, name) {

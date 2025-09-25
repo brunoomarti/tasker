@@ -8,6 +8,7 @@ import "./css/login.css";
 import "./css/navbar.css";
 import "./css/buttons.css";
 import "./css/modal.css";
+import "./css/magicInput.css";
 
 export default function Layout() {
     return (

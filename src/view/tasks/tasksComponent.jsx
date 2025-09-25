@@ -327,7 +327,7 @@ function TaskRow({
                         aria-haspopup="menu"
                         aria-expanded={undefined}
                         style={{
-                            backgroundColor: "#F7F7F7",
+                            backgroundColor: "white",
                             color: "#333",
                             border: "1px solid white",
                             display: "flex",
@@ -386,7 +386,7 @@ function TaskRow({
                                     top: menuPos.top,
                                     right: menuPos.right,
                                     minWidth: 180,
-                                    background: "#f7f7f7",
+                                    background: "white",
                                     border: "1px solid white",
                                     borderRadius: 8,
                                     padding: 8,
@@ -452,9 +452,7 @@ function TaskRow({
 
             <motion.div
                 layout
-                className={`task-card ${task.done ? "concluida" : ""} ${
-                    flashingId === task.id ? "anim-reflexo" : ""
-                } d-flex flex-row justify-space-between gap-5`}
+                className={`task-card ${isExpanded ? "expanded" : ""} ${task.done ? "concluida" : ""} ${flashingId === task.id ? "anim-reflexo" : ""} d-flex flex-row justify-space-between gap-5`}
                 initial={false}
                 style={{ x, opacity: opacityMV, overflow: "hidden" }}
                 drag="x"
@@ -486,8 +484,8 @@ function TaskRow({
                         }}
                     >
                         <div className="d-flex flex-column">
-                            <div className="d-flex flex-row align-items-center">
-                                <div className="d-flex flex-column sync-status">
+                            <div className="d-flex flex-row">
+                                <div className="d-flex flex-column sync-status" style={{ marginTop: '1px' }}>
                                     {task.synced ? (
                                         <span className="material-symbols-outlined">
                                             cloud_done

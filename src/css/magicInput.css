@@ -1,0 +1,151 @@
+.magic-input {
+    --radius: 14px;
+    --pad-left: 40px;
+    --pad-right: 55px;
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 100%;
+    border-radius: var(--radius);
+    background: white;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.04);
+    isolation: isolate;
+}
+
+.magic-input__field {
+    width: 100%;
+    padding: 14px var(--pad-right) 14px var(--pad-left);
+    border: 1px solid transparent;
+    border-radius: var(--radius);
+    outline: none;
+    font-size: 14px;
+    background: transparent;
+}
+
+.magic-input__ia {
+    position: absolute;
+    left: 12px;
+    font-size: 20px;
+    opacity: 0.85;
+    pointer-events: none;
+}
+
+.magic-input__action {
+    position: absolute;
+    top: 7px;
+    bottom: 7px;
+    right: 6px;
+    aspect-ratio: 1;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    background: var(--bg-elevated, #f2f3f8);
+    transition:
+        transform 0.15s ease,
+        box-shadow 0.2s ease,
+        background 0.2s ease;
+}
+.magic-input__action:active {
+    transform: translateY(1px) scale(0.99);
+}
+.magic-input__action:hover {
+    box-shadow: 0 6px 14px rgba(0, 0, 0, 0.08);
+}
+
+/* Troca animada do ícone (fade + scale) */
+.magic-swap {
+    position: relative;
+    width: 1.4em; /* herda do botão */
+    height: 1.4em;
+    display: grid;
+    place-items: center;
+}
+
+.magic-swap .material-symbols-outlined {
+    font-size: 1.4em;
+}
+
+/* cada ícone ocupa a mesma área, empilhados */
+.magic-swap__icon {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    opacity: 0;
+    transform: scale(0.85);
+    transition:
+        opacity 0.18s ease,
+        transform 0.18s ease;
+    color: var(--secondary-text-color) !important;
+}
+
+/* o ativo aparece */
+.magic-swap__icon.is-active {
+    opacity: 1;
+    transform: scale(1);
+}
+
+.magic-input::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: var(--radius);
+    padding: 2px;
+    background: linear-gradient(
+            120deg,
+            rgba(120, 100, 255, 0.55) 0%,
+            rgba(255, 120, 200, 0.55) 25%,
+            rgba(255, 200, 120, 0.55) 50%,
+            rgba(120, 220, 255, 0.55) 75%,
+            rgba(120, 100, 255, 0.55) 100%
+        )
+        0 0 / 200% 200% no-repeat;
+    -webkit-mask:
+        linear-gradient(#000 0 0) content-box,
+        linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+    animation: magic-border 4s linear infinite paused;
+    opacity: 0.65;
+}
+.magic-input:focus-within::after {
+    animation-play-state: running;
+}
+
+.magic-input[data-listening="true"]::after {
+    animation-duration: 2.2s;
+    opacity: 0.9;
+    filter: saturate(1.2) brightness(1.02);
+}
+
+@keyframes magic-border {
+    0% {
+        background-position: 0% 50%;
+    }
+    50% {
+        background-position: 100% 50%;
+    }
+    100% {
+        background-position: 0% 50%;
+    }
+}
+
+.magic-input__field::placeholder {
+    color: var(--secondary-text-color);
+    opacity: 0.6;
+    transition:
+        color 0.2s,
+        opacity 0.2s;
+}
+
+.magic-input:focus-within .magic-input__field::placeholder {
+    opacity: 0.4;
+}
+
+.magic-input:not(:focus-within) .magic-input__field::placeholder {
+    text-shadow: 0 0 0.6px rgba(0, 0, 0, 0.2);
+}

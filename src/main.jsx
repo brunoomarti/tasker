@@ -11,6 +11,7 @@ import { Cadastro } from "./cadastro.jsx";
 import { NotFound } from "./notFound";
 import NovaTarefa from "./view/tasks/novaTarefa.jsx";
 import Shell from "./Shell";
+import UserProfile from "./view/userProfile.jsx";
 
 createRoot(document.getElementById("root")).render(
     <StrictMode>
@@ -54,6 +55,14 @@ createRoot(document.getElementById("root")).render(
                         }
                     />
                     <Route
+                        path="perfil"
+                        element={
+                            <Shell showNavbar={false}>
+                                <UserProfile />
+                            </Shell>
+                        }
+                    />
+                    <Route
                         path="*"
                         element={
                             <Shell showNavbar={false}>
@@ -64,7 +73,7 @@ createRoot(document.getElementById("root")).render(
                 </Routes>
             </BrowserRouter>
         </AuthProvider>
-    </StrictMode>
+    </StrictMode>,
 );
 
 if ("serviceWorker" in navigator) {
@@ -77,7 +86,7 @@ if ("serviceWorker" in navigator) {
                         reg.waiting?.scriptURL ||
                         reg.installing?.scriptURL ||
                         "",
-                    location.href
+                    location.href,
                 );
                 if (url.pathname !== "/sw.js") {
                     await reg.unregister();

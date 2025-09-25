@@ -3,17 +3,23 @@ import { useAuth } from "../../contexts/AuthContext";
 
 function UserDock() {
     const { currentUser } = useAuth();
-
-    const name =
-        (currentUser?.displayName && currentUser.displayName.trim());
+    const name = currentUser?.displayName && currentUser.displayName.trim();
 
     return (
         <div className="d-flex flex-row gap-10 justify-space-between align-center relative mb-40">
-            <div className="d-flex user-photo absolute horizontal-center-absolute left-0">
-                <span className="material-symbols-outlined">
+            <Link
+                to="/perfil"
+                className="d-flex user-photo absolute horizontal-center-absolute left-0"
+                aria-label="Abrir perfil do usuário"
+                title="Meu perfil"
+            >
+                <span
+                    className="material-symbols-outlined"
+                    style={{ cursor: "pointer" }}
+                >
                     account_circle
                 </span>
-            </div>
+            </Link>
 
             <div
                 className="d-flex flex-column justify-center"
@@ -31,6 +37,8 @@ function UserDock() {
             <Link
                 to="/nova-tarefa"
                 className="d-flex add-task absolute horizontal-center-absolute right-0"
+                aria-label="Criar nova tarefa"
+                title="Nova tarefa"
             >
                 <span className="material-symbols-outlined">add_circle</span>
             </Link>

@@ -197,6 +197,10 @@ a {
     font-weight: 600 !important;
 }
 
+.primary-color {
+    color: var(--primary-color)
+}
+
 .primary-text {
     color: var(--primary-text-color) !important;
 }
@@ -205,6 +209,10 @@ a {
     color: var(--secondary-text-color) !important;
     font-size: 0.9rem;
     line-height: 1.2 !important;
+}
+
+.secondary-text-color {
+    color: var(--secondary-text-color) !important;
 }
 
 .muted-text {

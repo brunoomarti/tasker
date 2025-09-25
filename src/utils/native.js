@@ -103,95 +103,94 @@ export async function copyTaskToClipboard(
     }
 }
 
-export async function listenTaskByVoice(onResult, onError) {
-    const SpeechRecognition =
-        window.SpeechRecognition || window.webkitSpeechRecognition;
-
-    if (!SpeechRecognition) {
-        onError &&
-            onError("Reconhecimento de voz não suportado neste navegador.");
+export async function listenTaskByVoice(onText, onError) {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) {
+        onError?.("Reconhecimento de voz não suportado neste navegador.");
         return null;
     }
 
+    // Solicita permissão de microfone (necessário em alguns browsers/fluxos)
     try {
         if (navigator.mediaDevices?.getUserMedia) {
             await navigator.mediaDevices.getUserMedia({ audio: true });
         }
-    } catch (e) {
-        onError && onError("Permissão de microfone negada");
+    } catch {
+        onError?.("Permissão de microfone negada");
         return null;
     }
 
-    const recognition = new SpeechRecognition();
-    recognition.lang = "pt-BR";
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-    recognition.continuous = false;
+    const rec = new SR();
+    rec.lang = "pt-BR";
+    rec.interimResults = true; // ✅ parciais ao vivo
+    rec.continuous = true; // ✅ continua ouvindo
+    rec.maxAlternatives = 1;
 
-    let gotResult = false;
-    let stopped = false;
+    let committed = ""; // trechos já finalizados
+    let lastEmit = 0;
 
-    const clearTimer = () => {
-        if (recognition.__timer) {
-            clearTimeout(recognition.__timer);
-            recognition.__timer = null;
-        }
+    // (Opcional) timeout de segurança caso nada seja dito
+    let watchdog = setTimeout(() => {
+        try {
+            rec.stop();
+        } catch {}
+        onError?.("Tempo esgotado sem captar fala");
+    }, 15000);
+
+    const clearWatchdog = () => {
+        clearTimeout(watchdog);
+        watchdog = null;
     };
 
-    recognition.__timer = setTimeout(() => {
-        if (!gotResult && !stopped) {
-            stopped = true;
+    rec.onresult = (e) => {
+        clearWatchdog();
+        let live = "";
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+            const r = e.results[i];
+            const txt = r[0]?.transcript || "";
+            if (r.isFinal) {
+                committed +=
+                    (committed && !committed.endsWith(" ") ? " " : "") + txt;
+            } else {
+                live += txt;
+            }
+        }
+
+        // Emite “final + parcial” (tempo real)
+        const out = `${committed} ${live}`.trim();
+        const now = performance.now();
+        if (now - lastEmit > 60) {
+            onText?.(out);
+            lastEmit = now;
+        }
+
+        // Reinicia watchdog a cada atividade
+        watchdog = setTimeout(() => {
             try {
-                recognition.stop();
+                rec.stop();
             } catch {}
-            onError && onError("Tempo esgotado sem captar fala");
-        }
-    }, 8000);
-
-    recognition.onresult = (event) => {
-        gotResult = true;
-        clearTimer();
-        const transcript = event.results?.[0]?.[0]?.transcript?.trim() ?? "";
-        if (transcript) onResult && onResult(transcript);
-        else onError && onError("Nada foi entendido");
+            onError?.("Tempo esgotado sem captar fala");
+        }, 15000);
     };
 
-    recognition.onnomatch = () => {
-        if (stopped) return;
-        clearTimer();
-        onError && onError("Nada foi entendido");
+    rec.onerror = (ev) => {
+        clearWatchdog();
+        onError?.(ev?.error || "Erro no reconhecimento");
     };
 
-    recognition.onerror = (event) => {
-        if (stopped) return;
-        clearTimer();
-        const err = event?.error || "Erro no reconhecimento";
-        onError && onError(err);
-    };
-
-    recognition.onaudioend = () => {
-        // áudio terminou; se não teve resultado, o onend cuidará
-    };
-
-    recognition.onspeechend = () => {
-        // usuário parou de falar; deixa o onend finalizar
-    };
-
-    recognition.onend = () => {
-        clearTimer();
-        if (!gotResult && !stopped) {
-            onError && onError("Finalizou sem reconhecimento");
-        }
+    rec.onend = () => {
+        clearWatchdog();
+        // não chama onError aqui; o componente decide o que fazer ao parar
     };
 
     try {
-        recognition.start();
-    } catch (_) {
-        onError && onError("Falha ao iniciar reconhecimento");
+        rec.start();
+    } catch {
+        onError?.("Falha ao iniciar reconhecimento");
         return null;
     }
 
-    return recognition;
+    return rec; // o seu componente já guarda em recognitionRef e chama .stop()
 }
 
 // export async function shareTask(task) {
