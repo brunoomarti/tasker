@@ -1,20 +1,21 @@
-// utils/nlp.js
-
-/** Helpers básicos **/
 function pad2(n) {
     return String(n).padStart(2, "0");
 }
+
 function toYMD(d) {
     return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
+
 function addDays(date, n) {
     const d = new Date(date);
     d.setDate(d.getDate() + n);
     return d;
 }
+
 function clamp(v, lo, hi) {
     return Math.max(lo, Math.min(hi, v));
 }
+
 function roundToNext5Min(date = new Date()) {
     const d = new Date(date);
     const mins = d.getMinutes();
@@ -24,6 +25,27 @@ function roundToNext5Min(date = new Date()) {
 }
 function capFirst(s = "") {
     return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+}
+
+function toAccentInsensitivePattern(s) {
+    const map = {
+        a: "[aáàâãäAÁÀÂÃÄ]",
+        e: "[eéèêëEÉÈÊË]",
+        i: "[iíìîïIÍÌÎÏ]",
+        o: "[oóòôõöOÓÒÔÕÖ]",
+        u: "[uúùûüUÚÙÛÜ]",
+        c: "[cçCÇ]",
+        n: "[nñNÑ]",
+    };
+    return s
+        .replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&") // escapa meta-chars
+        .replace(/[aeioucñ]/gi, (ch) => map[ch.toLowerCase()] || ch);
+}
+
+function removeAccentInsensitive(haystack, needle) {
+    if (!needle) return haystack;
+    const pat = toAccentInsensitivePattern(needle.trim());
+    return haystack.replace(new RegExp(pat, "gi"), " ");
 }
 
 /** Normalização agressiva para PT-BR vindo do ASR */
@@ -330,11 +352,14 @@ function cleanTitlePT(
     raw,
     { hasTime = false, hasDate = false, titleCase = false } = {},
 ) {
-    // garante string
     raw = (raw ?? "").toString();
 
-    const norm = normPT(raw);
-    let tokens = norm.split(/\s+/).filter(Boolean);
+    // tokens originais + versão normalizada de cada um
+    const origTokens = raw.split(/\s+/).filter(Boolean);
+    const pairs = origTokens.map((orig) => ({
+        orig,
+        norm: normPT(orig),
+    }));
 
     const KEEP_CONNECTORS = new Set([
         "de",
@@ -357,48 +382,43 @@ function cleanTitlePT(
         "numa",
     ]);
 
-    // só considera “palavra de conteúdo” se for string válida
-    const CONTENTY = (t) =>
-        typeof t === "string" &&
-        /^[a-z0-9]+$/.test(t) &&
-        t.length >= 2 &&
-        !isTemporalWord(t);
+    const CONTENTY = (tNorm) =>
+        typeof tNorm === "string" &&
+        /^[a-z0-9]+$/.test(tNorm) &&
+        tNorm.length >= 2 &&
+        !isTemporalWord(tNorm);
 
-    // remove temporais se já extraímos quando/dia
+    // 1) remove termos temporais se já extraímos quando/dia (comparando pela forma normalizada)
+    let filtered = pairs;
     if (hasTime || hasDate) {
-        tokens = tokens.filter((t) => !isTemporalWord(t));
+        filtered = filtered.filter(({ norm }) => !isTemporalWord(norm));
     }
 
-    // mantém conectores apenas entre palavras de conteúdo
+    // 2) mantém conectores só quando entre palavras de conteúdo
     const kept = [];
-    for (let i = 0; i < tokens.length; i++) {
-        const t = tokens[i];
-        if (typeof t !== "string") continue;
+    for (let i = 0; i < filtered.length; i++) {
+        const cur = filtered[i];
+        const prev = filtered[i - 1];
+        const next = filtered[i + 1];
 
-        if (KEEP_CONNECTORS.has(t)) {
-            const prev = tokens[i - 1];
-            const next = tokens[i + 1];
-            if (CONTENTY(prev) && CONTENTY(next)) {
-                kept.push(t);
+        if (KEEP_CONNECTORS.has(cur.norm)) {
+            if (prev && next && CONTENTY(prev.norm) && CONTENTY(next.norm)) {
+                kept.push(cur.orig); // preserva acento
             }
-            // se não estiver entre conteúdo, descarta o conector
-            continue;
+            continue; // descarta conector fora de contexto
         }
-
-        kept.push(t);
+        kept.push(cur.orig); // preserva acento
     }
 
+    // 3) reconstrói com tokens ORIGINAIS
     let out = kept.join(" ");
 
-    // polimentos
+    // 4) polimentos (contrações etc.) – acento-insensíveis, mas não destroem acentos já existentes
     out = out
-        .replace(/\b(da|de|do)\s+(a|o)\b/g, (_, p1, p2) =>
-            p1 === "de" && p2 === "a"
-                ? "da"
-                : p1 === "de" && p2 === "o"
-                  ? "do"
-                  : `${p1} ${p2}`,
-        )
+        .replace(/\bde\s+o\b/gi, "do")
+        .replace(/\bde\s+a\b/gi, "da")
+        .replace(/\bem\s+o\b/gi, "no")
+        .replace(/\bem\s+a\b/gi, "na")
         .replace(/\s+/g, " ")
         .trim();
 
@@ -418,97 +438,148 @@ function smartTitleRepairPT(raw = "") {
 
     // Muletas/ruídos comuns no começo/fim
     const FILLERS_BEG =
-        /^(tipo|assim|entao|então|olha|veja|bom|ah|eh|é|aham|ai|aí|cara|mano|meu|sei la|sei lá)\b[\s,]*/i;
-    const FILLERS_END = /[\s,]*(tipo|assim|né|tá|tá bom|tá bom\?)\s*$/i;
+        /^(tipo|assim|entao|então|olha|veja|bom|ah|eh|é|aham|ai|aí|cara|mano|meu|minha|sei la|sei lá|entao tá|então tá|por favor,?)\b[\s,]*/i;
+    const FILLERS_END =
+        /[\s,]*(tipo|assim|né|tá|tá bom|tá bom\?|por favor)\s*$/i;
     t = t.replace(FILLERS_BEG, "").replace(FILLERS_END, "");
 
-    // Normalizações simples
+    // Normalizações simples / gírias
     t = t
         .replace(/\bp\/\b/gi, "para")
         .replace(/\bpra\b/gi, "para")
         .replace(/\bpro\b/gi, "para o")
-        .replace(/\bpra\b/gi, "para")
         .replace(/\bnuma?\b/gi, (m) =>
             m.toLowerCase() === "numa" ? "em uma" : "em um",
         )
         .replace(/\bq\b/gi, "que")
         .replace(/\bvc\b/gi, "você")
         .replace(/\btd\b/gi, "tudo")
-        .replace(/\bblz\b/gi, "beleza");
+        .replace(/\bblz\b/gi, "beleza")
+        .replace(/\bpfv\b/gi, "por favor");
 
     // --- Intenção falada no INÍCIO da frase (podar) -----------------------
-    // exemplos: "eu preciso", "preciso", "tenho que/de", "devo", "vou",
-    // "queria", "quero", "gostaria de", "é pra", "era pra", "tá pra", "tem que/de", "precisava", "precisava de"
+    // "eu preciso/tenho que/vou/queria/quero/gostaria/é pra/era pra/tá pra/tem que/precisava"
     t = t.replace(
         /^(?:eu\s+)?(?:preciso|precisava|precisarei|tenho\s+(?:que|de)|tem\s+(?:que|de)|devo|vou|queria|quero|gostaria\s+de|era\s+pra|é\s+pra|t[áa]\s+pra)\b[\s,]*/i,
         "",
     );
 
-    // Se depois da intenção vier só um verbo genérico, remove-o também.
-    // "fazer/ver/olhar/checar/arrumar/resolver/anotar/marcar/ligar" etc.
-    // (apenas quando vêm imediatamente após o começo, p/ não cortar verbos importantes no meio)
+    // Depois da intenção, se vier um verbo genérico, remova (apenas no começo)
     t = t.replace(
-        /^(?:fazer|ver|olhar|checar|arrumar|resolver|anotar|marcar|ligar|pegar|comprar|pagar|buscar)\b[\s,:-]*/i,
+        /^(?:fazer|ver|olhar|checar|arrumar|resolver)\b(?=\s*(?:isso|isso\s+a[ií]|a[ií]qui|ali|o\s+neg[oó]cio|uma?\s+coisa|as\s+coisas)?\s*[$,:-]?$)/i,
         "",
     );
 
-    // --- Casca de comando: "crie uma tarefa/lembrete ..." --------------------
+    // ----------------- BLOCO: Pedidos educados + “casca de lembrete” -----------------
+    const POLITE =
+        "(?:por\\s+favor,?\\s*|pode(?:ria)?\\s+|consegue\\s+|tem\\s+como\\s+|seria\\s+possivel\\s+|voce\\s+pode\\s+|vc\\s+pode\\s+)?";
+    const PRON_PRE = "(?:me|te|nos|lhe|lhes)\\s+";
+    const PRON_POS = "(?:\\s*-(?:me|te|nos|lhe|lhes))?";
+    const VERB_REM =
+        "(?:lembre|lembra|lembrar|recorde|recorda|recordar|avise|avisa|avisar|alerte|alerta|alertar|notifique|notifica|notificar)";
+
+    // Início: “(pode) me lembre/avise/alerte (de|que) …” / “lembre-me de …”
+    t = t.replace(
+        new RegExp(
+            `^${POLITE}(?:${PRON_PRE})?(?:${VERB_REM})${PRON_POS}\\s+(?:de|que)\\s+`,
+            "i",
+        ),
+        "",
+    );
+    // Em qualquer lugar (backup)
+    t = t.replace(
+        new RegExp(
+            `\\b${POLITE}(?:${PRON_PRE})?(?:${VERB_REM})${PRON_POS}\\s+(?:de|que)\\s+`,
+            "gi",
+        ),
+        " ",
+    );
+
+    // “avisar” sem “de/que”, mas seguido de marcador temporal → também casca
+    t = t.replace(
+        /\b(?:pode(?:ria)?\s+)?(?:me\s+)?avis(?:ar|e|a)(?:-me)?\s+(?:quando|amanha|hoje|depois|mais\s+tarde|na?\s+(?:segunda|terca|terça|quarta|quinta|sexta|sabado|sábado|domingo)|as\s+\d{1,2}(?::\d{2})?)\b/gi,
+        " ",
+    );
+
+    // ----------------- BLOCO: “(para) eu/me lembrar de …” -----------------
+    // início
+    t = t.replace(/^(?:para|pra|p\/)?\s*(?:eu|me)\s+lembrar\s+de\s+/i, "");
+    // meio
+    t = t.replace(/\b(?:para|pra|p\/)?\s*(?:eu|me)\s+lembrar\s+de\s+/gi, " ");
+
+    // ----------------- BLOCO: Negativo “não me deixe esquecer de …” -----------------
+    t = t.replace(
+        /^(?:por\s+favor,\s*)?nao\s+(?:me\s+)?deix[ea](?:\s+eu)?\s+esquecer\s+de\s+/i,
+        "",
+    );
+    t = t.replace(
+        /\bnao\s+(?:me\s+)?deix[ea](?:\s+eu)?\s+esquecer\s+de\s+/gi,
+        " ",
+    );
+    // variações curtas: “pra eu não esquecer de …”, “que eu não esqueça de …”
+    t = t.replace(/^(?:para|pra|p\/)?\s*(?:eu)?\s*nao\s+esquecer\s+de\s+/i, "");
+    t = t.replace(/\bque\s+(?:eu|a gente)\s+nao\s+esqueca\s+de\s+/gi, " ");
+
+    // ----------------- BLOCO: “cria/coloca um lembrete de/para …” -----------------
+    t = t.replace(
+        /^(?:cria(?:r)?|crie|coloca(?:r)?|coloque|bota(?:r)?|bote|anota(?:r)?|anote|marca(?:r)?|marque|agenda(?:r)?|agende|registra(?:r)?|registre)\s+(?:um|uma)?\s*lembrete\s*(?:de|para|pra|p\/)\s*/i,
+        "",
+    );
+
+    // ----------------- BLOCO: “crie/adicione/coloque uma tarefa/lembrete …” -----------------
     t = t.replace(
         /^(?:cria(?:r)?|crie|adiciona(?:r)?|adicione|coloca(?:r)?|coloque|bota(?:r)?|bote|anota(?:r)?|anote|marca(?:r)?|marque|registra(?:r)?|registre|define|defina|configura(?:r)?|configure)\s+(?:uma?\s+)?(?:tarefa|lembrete|anotacao|anotação|nota|evento)\s*(?:para|pra|p\/)?\s*/i,
         "",
     );
 
-    // --- “(para|pra|p/) me lembrar de …”, “me lembrar de …”, “lembrar de …” ---
-    t = t
-        // início da frase (mais comum)
-        .replace(/^(?:para|pra|p\/)?\s*me\s+lembrar\s+de\s+/i, "")
-        .replace(/^(?:para|pra|p\/)?\s*lembrar\s+de\s+/i, "")
-        // em seguida de conectivos
-        .replace(/\b(?:para|pra|p\/)?\s*me\s+lembrar\s+de\s+/i, " ")
-        .replace(/\b(?:para|pra|p\/)?\s*lembrar\s+de\s+/i, " ");
-
-    // --- “que eu …” logo após a casca (ex.: "crie ... que eu vá ao mercado") --
-    t = t.replace(/^(?:que\s+eu|que\s+vou|que\s+iria|que\s+devo)\s+/i, "");
-
-    // também cobre "me lembrar de", "te lembrar de", "nos lembrar de", etc.
+    // ----------------- BLOCO: “que eu …” logo após casca -----------------
     t = t.replace(
-        /\b(?:para|pra|p\/)?\s*(?:me|te|nos|vos|lhe|lhes)?\s*lembrar\s+de\s+/i,
-        " ",
+        /^(?:e\s+)?(?:que\s+(?:eu|a gente|vou|iria|devo)\s+|que\s+)/i,
+        "",
     );
 
-    // Limpezas de espaços novamente
+    // ----------------- “lembrar de …” genérico (tapa-buraco final) -----------------
+    t = t
+        .replace(
+            /^(?:para|pra|p\/)?\s*(?:me|te|nos|vos|lhe|lhes)?\s*lembrar\s+de\s+/i,
+            "",
+        )
+        .replace(
+            /\b(?:para|pra|p\/)?\s*(?:me|te|nos|vos|lhe|lhes)?\s*lembrar\s+de\s+/gi,
+            " ",
+        );
+
+    // Limpezas de espaços
     t = t.replace(/\s+/g, " ").trim();
 
-    // "ora" x "hora": se houver número/“às/a”/“da”/“de” perto, é horário
-    // ex.: "às 9 ora", "9 ora", "da ora", "de ora", ou "ora 10"
+    // ----------------- Correções “ora(s)” ↔ “hora(s)” (ruído ASR) -----------------
     t = t
-        // número seguido de "ora(s)"
         .replace(/(\b\d{1,2})\s+oras?\b/gi, "$1 horas")
-        // "às|a|da|de" + número + "ora(s)" (cobre "às 9 ora", "a 8 oras")
         .replace(/\b(as|às|a|da|de)\s+(\d{1,2})\s+oras?\b/gi, "$1 $2 horas")
-        // número + "ora(s)" sem preposição
         .replace(/\b(\d{1,2})\s+ora(s?)\b/gi, "$1 hora$2")
-        // "ora(s)" isolado com pista temporal no entorno → "hora(s)"
         .replace(
             /\bora(s?)\b(?=.*\b(\d{1,2}|manha|tarde|noite|am|pm)\b)/gi,
             "hora$1",
         )
         .replace(/(?<=\b(as|às|a|da|de)\s)\bora(s?)\b/gi, "hora$1");
 
-    // Consolida "meio dia" / "meia noite" (exibição mais natural no título)
+    // Consolida "meio dia" / "meia noite"
     t = t
         .replace(/\bmeio\s+dia\b/gi, "meio-dia")
         .replace(/\bmeia\s+noite\b/gi, "meia-noite");
 
-    // “de o” / “de a” → contração (isso já existe em cleanTitle, mas reforçamos aqui no título final)
+    // Contrações e polimento
     t = t
         .replace(/\bde\s+o\b/gi, "do")
         .replace(/\bde\s+a\b/gi, "da")
         .replace(/\bem\s+o\b/gi, "no")
         .replace(/\bem\s+a\b/gi, "na");
 
-    // Remove duplicatas seguidas de conectores: "de de", "para para", etc.
+    // Remove duplicatas seguidas de conectores (ex.: "de de")
     t = t.replace(/\b(\p{L}{2,})\b\s+\1\b/giu, "$1");
+
+    // Conectores soltos no fim
+    t = t.replace(/\b(?:de|da|do|para|pra|p\/|em|no|na)\s*$/i, "").trim();
 
     // Espaços finais
     t = t.replace(/\s+/g, " ").trim();
@@ -639,11 +710,16 @@ export function extractWhenPTBR(transcript, now = new Date()) {
         }
     }
 
-    let titleSource = normPT(text);
+    let titleSource = text; // mantém acentos!
+    const normAll = normPT(text);
+
+    // remove cada match (fornecido em versão normalizada) do texto ORIGINAL,
     matches.forEach((m) => {
         if (!m) return;
-        titleSource = titleSource.replace(normPT(m), " ");
+        // m já vem de low (normalizado) — remove de forma acento-insensível
+        titleSource = removeAccentInsensitive(titleSource, m);
     });
+
     titleSource = titleSource.replace(/\s+/g, " ").trim();
 
     titleSource = stripTemporalResidualPT(titleSource);

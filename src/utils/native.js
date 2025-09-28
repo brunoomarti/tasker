@@ -31,54 +31,93 @@ export function exportTask(tasks) {
     URL.revokeObjectURL(url);
 }
 
+function toBRDateSafe(d) {
+    try {
+        if (!d) return "—";
+        const date =
+            typeof d === "string"
+                ? new Date(d)
+                : d?.toDate
+                  ? d.toDate()
+                  : d?.seconds
+                    ? new Date(d.seconds * 1000)
+                    : null;
+        return date
+            ? date.toLocaleString("pt-BR", {
+                  dateStyle: "short",
+                  timeStyle: "short",
+              })
+            : "—";
+    } catch {
+        return "—";
+    }
+}
+
+function formatTasksText(
+    taskOrTasks,
+    { format = "pretty", forShare = false } = {},
+) {
+    const tasks = Array.isArray(taskOrTasks) ? taskOrTasks : [taskOrTasks];
+
+    const toBRDateSafe = (d) => {
+        try {
+            if (!d) return "—";
+            const date =
+                typeof d === "string"
+                    ? new Date(d)
+                    : d?.toDate
+                      ? d.toDate()
+                      : d?.seconds
+                        ? new Date(d.seconds * 1000)
+                        : null;
+            return date
+                ? date.toLocaleString("pt-BR", {
+                      dateStyle: "short",
+                      timeStyle: "short",
+                  })
+                : "—";
+        } catch {
+            return "—";
+        }
+    };
+
+    const prettyBlock = (t) => {
+        const loc = t.location
+            ? `Localização: ${t.location.lat}, ${t.location.lng}`
+            : "Sem localização";
+        const created = toBRDateSafe(t.createdAt || t.createdAtServer);
+        const when = [t.hora, t.data].filter(Boolean).join(" ");
+
+        if (forShare) {
+            return [
+                `Tarefa: ${t.title ?? ""}${when ? ` — ${when}` : ""}`,
+                `Descrição: ${t.descricao?.trim() ? t.descricao : "Autodescritiva"}`,
+                `Concluída: ${t.done ? "Sim" : "Não"}`,
+                `Criada em: ${created}`,
+                loc,
+            ].join("\n");
+        }
+
+        return [
+            `Tarefa: ${t.title ?? ""}`,
+            `Descrição: ${t.descricao?.trim() ? t.descricao : "Autodescritiva"}`,
+            `Hora: ${t.hora || ""}  Data: ${t.data || ""}`,
+            `Concluída: ${t.done ? "Sim" : "Não"}`,
+            `Criada em: ${created}`,
+            loc,
+        ].join("\n");
+    };
+
+    if (format === "json") return JSON.stringify(tasks, null, 2);
+    return tasks.map(prettyBlock).join("\n\n— — — — —\n\n");
+}
+
 export async function copyTaskToClipboard(
     taskOrTasks,
     { format = "pretty" } = {},
 ) {
     try {
-        const tasks = Array.isArray(taskOrTasks) ? taskOrTasks : [taskOrTasks];
-
-        const toBRDate = (d) => {
-            try {
-                if (!d) return "—";
-                const date =
-                    typeof d === "string"
-                        ? new Date(d)
-                        : d?.toDate
-                          ? d.toDate()
-                          : d?.seconds
-                            ? new Date(d.seconds * 1000)
-                            : null;
-                return date
-                    ? date.toLocaleString("pt-BR", {
-                          dateStyle: "short",
-                          timeStyle: "short",
-                      })
-                    : "—";
-            } catch {
-                return "—";
-            }
-        };
-
-        const prettyBlock = (t) => {
-            const loc = t.location
-                ? `Localização: ${t.location.lat}, ${t.location.lng}`
-                : "Sem localização";
-            const created = toBRDate(t.createdAt || t.createdAtServer);
-            return [
-                `Tarefa: ${t.title ?? ""}`,
-                `Descrição: ${t.descricao?.trim() ? t.descricao : "Autodescritiva"}`,
-                `Hora: ${t.hora || ""}  Data: ${t.data || ""}`,
-                `Concluída: ${t.done ? "Sim" : "Não"}`,
-                `Criada em: ${created}`,
-                loc,
-            ].join("\n");
-        };
-
-        const text =
-            format === "json"
-                ? JSON.stringify(tasks, null, 2)
-                : tasks.map(prettyBlock).join("\n\n— — — — —\n\n");
+        const text = formatTasksText(taskOrTasks, { format });
 
         if (navigator.clipboard?.writeText) {
             await navigator.clipboard.writeText(text);
@@ -103,6 +142,42 @@ export async function copyTaskToClipboard(
     }
 }
 
+export async function shareTask(taskOrTasks, { format = "pretty" } = {}) {
+    const tasks = Array.isArray(taskOrTasks) ? taskOrTasks : [taskOrTasks];
+    if (!tasks.length) throw new Error("Tarefa inválida para compartilhamento");
+
+    const text = formatTasksText(tasks, { format, forShare: true });
+
+    const title =
+        tasks.length === 1
+            ? (() => {
+                  const t = tasks[0];
+                  const when = [t.hora, t.data].filter(Boolean).join(" ");
+                  return `${t.title || "Tarefa"}${when ? ` — ${when}` : ""}`;
+              })()
+            : `${tasks.length} tarefas`;
+
+    const shareData = { title, text };
+
+    if (navigator.share) {
+        try {
+            if (navigator.canShare && !navigator.canShare(shareData)) {
+                throw new Error(
+                    "Este conteúdo não pode ser compartilhado pelo navegador.",
+                );
+            }
+            await navigator.share(shareData);
+            return true;
+        } catch (err) {
+            if (err?.name === "AbortError") return false;
+            console.warn("Falha no share, tentando copiar:", err);
+        }
+    }
+
+    await copyTaskToClipboard(tasks, { format });
+    return false;
+}
+
 export async function listenTaskByVoice(onText, onError) {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) {
@@ -110,7 +185,6 @@ export async function listenTaskByVoice(onText, onError) {
         return null;
     }
 
-    // Solicita permissão de microfone (necessário em alguns browsers/fluxos)
     try {
         if (navigator.mediaDevices?.getUserMedia) {
             await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -122,14 +196,13 @@ export async function listenTaskByVoice(onText, onError) {
 
     const rec = new SR();
     rec.lang = "pt-BR";
-    rec.interimResults = true; // ✅ parciais ao vivo
-    rec.continuous = true; // ✅ continua ouvindo
+    rec.interimResults = true;
+    rec.continuous = true;
     rec.maxAlternatives = 1;
 
-    let committed = ""; // trechos já finalizados
+    let committed = "";
     let lastEmit = 0;
 
-    // (Opcional) timeout de segurança caso nada seja dito
     let watchdog = setTimeout(() => {
         try {
             rec.stop();
@@ -156,7 +229,6 @@ export async function listenTaskByVoice(onText, onError) {
             }
         }
 
-        // Emite “final + parcial” (tempo real)
         const out = `${committed} ${live}`.trim();
         const now = performance.now();
         if (now - lastEmit > 60) {
@@ -164,7 +236,6 @@ export async function listenTaskByVoice(onText, onError) {
             lastEmit = now;
         }
 
-        // Reinicia watchdog a cada atividade
         watchdog = setTimeout(() => {
             try {
                 rec.stop();
@@ -180,7 +251,6 @@ export async function listenTaskByVoice(onText, onError) {
 
     rec.onend = () => {
         clearWatchdog();
-        // não chama onError aqui; o componente decide o que fazer ao parar
     };
 
     try {
@@ -190,15 +260,5 @@ export async function listenTaskByVoice(onText, onError) {
         return null;
     }
 
-    return rec; // o seu componente já guarda em recognitionRef e chama .stop()
+    return rec;
 }
-
-// export async function shareTask(task) {
-//     if (!navigator.canShare) {
-//         throw new Error("Navegador não suporta Web Share API");
-//     } else if (!task) {
-//         throw new Error("Tarefa inválida para compartilhamento");
-//     } else {
-//         const text = `Tarefa: ${task.descricao}\nHora: ${task.hora || ""} Data: ${task.data}\nConcluída: ${task.done ? "Sim" : "Não"}`; //adicionar localização depois
-//     }
-// }

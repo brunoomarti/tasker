@@ -58,10 +58,10 @@ export default function MagicTaskInput({
     const { currentUser } = useAuth();
     const [value, setValue] = useState("");
     const [isListening, setIsListening] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false); // NEW
     const [hint, setHint] = useState("");
 
     const [ph, setPh] = useState("");
-    const [pIndex, setPIndex] = useState(0);
     const [typedLen, setTypedLen] = useState(0);
     const [deleting, setDeleting] = useState(false);
     const [cursorOn, setCursorOn] = useState(true);
@@ -80,9 +80,7 @@ export default function MagicTaskInput({
         return () => {
             try {
                 recognitionRef.current?.stop();
-            } catch {
-                /* noop */
-            }
+            } catch {}
             recognitionRef.current = null;
             clearTimeout(typingTimerRef.current);
             clearInterval(cursorTimerRef.current);
@@ -104,66 +102,58 @@ export default function MagicTaskInput({
         );
     }
 
-    /** ------------------------
-     *  Placeholder – efeito de digitação
-     *  ------------------------ */
+    /** Placeholder – efeito de digitação */
     useEffect(() => {
         clearInterval(cursorTimerRef.current);
-        if (!value && !isListening) {
+        if (!value && !isListening && !isSubmitting) {
             cursorTimerRef.current = setInterval(
                 () => setCursorOn((v) => !v),
                 BLINK_MS,
             );
         }
-
-        if (value || isListening) {
+        if (value || isListening || isSubmitting) {
             setPh("");
             return;
         }
 
-        // Garante que sempre temos uma fila
         if (!queueRef.current.length) {
             queueRef.current = shuffle(SUGGESTIONS);
         }
+        const phrase = queueRef.current[0];
 
-        const phrase = queueRef.current[0]; // pega a primeira da fila
-
-        const TYPE = 50; // digitar
-        const DELETE = 30; // apagar
+        const TYPE = 50;
+        const DELETE = 30;
         const HOLD_END = 1500;
         const HOLD_START = 350;
 
         const step = () => {
+            if (isSubmitting) return; // pausa animação durante envio
             if (!deleting) {
-                // digitando
                 if (typedLen < phrase.length) {
                     setTypedLen(typedLen + 1);
                     setPh(phrase.slice(0, typedLen + 1));
                     typingTimerRef.current = setTimeout(step, TYPE);
                 } else {
-                    // fim da frase → segura um pouco e começa a deletar
                     typingTimerRef.current = setTimeout(() => {
                         setDeleting(true);
                         typingTimerRef.current = setTimeout(step, DELETE);
                     }, HOLD_END);
                 }
             } else {
-                // deletando
                 if (typedLen > 0) {
                     setTypedLen(typedLen - 1);
                     setPh(phrase.slice(0, typedLen - 1));
                     typingTimerRef.current = setTimeout(step, DELETE);
                 } else {
-                    // terminou de apagar → remove da fila e prepara a próxima
-                    queueRef.current.shift(); // consome a atual
+                    queueRef.current.shift();
                     if (!queueRef.current.length) {
-                        queueRef.current = shuffle(SUGGESTIONS); // reinicia embaralhado
+                        queueRef.current = shuffle(SUGGESTIONS);
                     }
                     setDeleting(false);
                     setTypedLen(0);
                     typingTimerRef.current = setTimeout(() => {
-                        forceTick((t) => t + 1); // força re-render p/ pegar nova frase
-                        step(); // segue animando
+                        forceTick((t) => t + 1);
+                        step();
                     }, HOLD_START);
                 }
             }
@@ -171,23 +161,19 @@ export default function MagicTaskInput({
 
         typingTimerRef.current = setTimeout(step, deleting ? DELETE : TYPE);
         return () => clearTimeout(typingTimerRef.current);
-    }, [value, isListening, typedLen, deleting]);
+    }, [value, isListening, isSubmitting, typedLen, deleting]);
 
     const computedPlaceholder =
-        value || isListening
+        value || isListening || isSubmitting
             ? placeholder
             : `${ph}${cursorOn ? CURSOR_CHAR : "\u2009"}`;
 
     async function buildTaskFromText(text) {
         const parsed = extractWhenPTBR(text, new Date());
-
         const rawTitle = (parsed.title || text || "").trim();
-
         const title = capFirst(rawTitle);
-
         const data = parsed.dateYMD || getTodayYYYYMMDD();
         const hora = parsed.timeHHMM || "";
-
         const location = await getUserLocation();
         const uid = currentUser?.uid ?? null;
 
@@ -207,7 +193,9 @@ export default function MagicTaskInput({
     }
 
     async function createTaskFromText(text) {
+        if (isSubmitting) return; // trava reentrância
         if (!text.trim()) return;
+        setIsSubmitting(true);
         try {
             const task = await buildTaskFromText(text);
             await addTask(task);
@@ -227,12 +215,14 @@ export default function MagicTaskInput({
             console.error("Falha ao criar tarefa:", e);
             setHint("Falha ao criar tarefa");
             setTimeout(() => setHint(""), 1500);
+        } finally {
+            setIsSubmitting(false);
         }
     }
 
     // ---- Voz ----
     function startVoice() {
-        if (isListening) return;
+        if (isListening || isSubmitting) return; // não começa se estiver enviando
         setIsListening(true);
         setHint("Gravando… clique em enviar para finalizar");
         liveBufferRef.current = "";
@@ -240,7 +230,7 @@ export default function MagicTaskInput({
         recognitionRef.current = listenTaskByVoice(
             (transcript) => {
                 liveBufferRef.current = transcript || "";
-                setValue(liveBufferRef.current); // ao vivo
+                setValue(liveBufferRef.current);
             },
             (err) => {
                 setIsListening(false);
@@ -262,6 +252,7 @@ export default function MagicTaskInput({
     }
 
     async function stopVoiceAndSubmit() {
+        if (isSubmitting) return; // já enviando
         try {
             recognitionRef.current?.stop();
         } catch {}
@@ -277,15 +268,14 @@ export default function MagicTaskInput({
         await createTaskFromText(finalTranscript);
     }
 
-    const showSend = isListening || value.trim();
+    const showSend = (isListening || value.trim()) && !isSubmitting;
 
     return (
         <div style={{ width: "100%" }}>
             <div
-                className={`magic-input ${
-                    isListening ? "magic-input--listening" : ""
-                }`}
+                className={`magic-input ${isListening ? "magic-input--listening" : ""}`}
                 data-listening={isListening ? "true" : "false"}
+                aria-busy={isSubmitting ? "true" : "false"} // acessibilidade
             >
                 <span
                     className="material-symbols-outlined magic-input__ia"
@@ -300,47 +290,72 @@ export default function MagicTaskInput({
                     value={value}
                     onChange={(e) => setValue(e.target.value)}
                     onKeyDown={(e) => {
-                        if (e.key === "Enter" && value.trim() && !isListening) {
+                        if (
+                            e.key === "Enter" &&
+                            value.trim() &&
+                            !isListening &&
+                            !isSubmitting
+                        ) {
                             e.preventDefault();
                             createTaskFromText(value);
                         }
                     }}
                     placeholder={computedPlaceholder}
                     className="magic-input__field"
+                    disabled={isSubmitting} // NEW
                 />
 
                 <button
                     className="magic-input__action"
                     onClick={
-                        showSend
-                            ? isListening
-                                ? stopVoiceAndSubmit
-                                : () => createTaskFromText(value)
-                            : startVoice
+                        isSubmitting
+                            ? undefined
+                            : showSend
+                              ? isListening
+                                  ? stopVoiceAndSubmit
+                                  : () => createTaskFromText(value)
+                              : startVoice
                     }
-                    aria-label={showSend ? "Enviar" : "Falar tarefa"}
-                    title={showSend ? "Enviar" : "Falar tarefa"}
+                    aria-label={
+                        isSubmitting
+                            ? "Enviando…"
+                            : showSend
+                              ? "Enviar"
+                              : "Falar tarefa"
+                    }
+                    title={
+                        isSubmitting
+                            ? "Enviando…"
+                            : showSend
+                              ? "Enviar"
+                              : "Falar tarefa"
+                    }
+                    disabled={isSubmitting} // NEW
                 >
-                    <span className="magic-swap">
-                        <span
-                            className={
-                                "material-symbols-outlined magic-swap__icon " +
-                                (!showSend ? "is-active" : "")
-                            }
-                            aria-hidden={showSend ? "true" : "false"}
-                        >
-                            mic
+                    {isSubmitting ? (
+                        <span className="spinner" aria-hidden />
+                    ) : (
+                        <span className="magic-swap">
+                            <span
+                                className={
+                                    "material-symbols-outlined magic-swap__icon " +
+                                    (!showSend ? "is-active" : "")
+                                }
+                                aria-hidden={showSend ? "true" : "false"}
+                            >
+                                mic
+                            </span>
+                            <span
+                                className={
+                                    "material-symbols-outlined magic-swap__icon " +
+                                    (showSend ? "is-active" : "")
+                                }
+                                aria-hidden={showSend ? "false" : "true"}
+                            >
+                                send
+                            </span>
                         </span>
-                        <span
-                            className={
-                                "material-symbols-outlined magic-swap__icon " +
-                                (showSend ? "is-active" : "")
-                            }
-                            aria-hidden={showSend ? "false" : "true"}
-                        >
-                            send
-                        </span>
-                    </span>
+                    )}
                 </button>
             </div>
 

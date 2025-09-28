@@ -16,8 +16,9 @@ import { syncTasks } from "../../utils/sync";
 import { useAuth } from "../../contexts/AuthContext";
 import ConfirmDeleteModal from "../components/modal/confirmDeleteModal";
 import { getAddressCached } from "../../utils/geocode";
-import { exportTask, copyTaskToClipboard } from "../../utils/native";
+import { exportTask, copyTaskToClipboard, shareTask } from "../../utils/native";
 import { createPortal } from "react-dom";
+import { getGoogleCalendar } from "../../utils/calendar";
 
 const SWIPE_LOCK_X = 80;
 const DRAG_MAX_X = 90;
@@ -185,6 +186,12 @@ function TaskRow({
     const [addr, setAddr] = useState(null);
     const [addrStatus, setAddrStatus] = useState("idle");
 
+    const centerRow = (opts = { closeMenu: true }) => {
+        if (opts.closeMenu) setMenuOpen(false);
+        onCloseSwipe();
+        animate(x, 0, { type: "spring", stiffness: 700, damping: 40 });
+    };
+
     useEffect(() => {
         let active = true;
         async function load() {
@@ -199,7 +206,7 @@ function TaskRow({
             setAddrStatus("loading");
             const a = await getAddressCached(
                 task.location.lat,
-                task.location.lng,
+                task.location.lng
             );
             if (!active) return;
 
@@ -231,14 +238,14 @@ function TaskRow({
         } catch (err) {
             try {
                 await navigator.clipboard.writeText(
-                    JSON.stringify(task, null, 2),
+                    JSON.stringify(task, null, 2)
                 );
             } catch (err2) {
                 alert("Não foi possível exportar a tarefa.");
                 console.error("Export falhou:", err, "Clipboard falhou:", err2);
             }
         } finally {
-            setMenuOpen(false);
+            centerRow();
         }
     };
 
@@ -246,17 +253,33 @@ function TaskRow({
         e.stopPropagation();
         try {
             const ok = await copyTaskToClipboard([task]);
-            if (!ok) {
-                alert("Não foi possível copiar a tarefa.");
-            } else {
-                console.log("Copiado para a área de transferência");
-            }
+            if (!ok) alert("Não foi possível copiar a tarefa.");
         } catch (err) {
             alert("Não foi possível copiar a tarefa.");
             console.error("Copiar falhou:", err);
         } finally {
-            setMenuOpen(false);
+            centerRow();
         }
+    };
+
+    const handleShareTask = async (e) => {
+        e.stopPropagation();
+        try {
+            const ok = await shareTask([task]);
+            if (!ok) alert("Não foi possível compartilhar a tarefa.");
+        } catch (err) {
+            alert("Não foi possível compartilhar a tarefa.");
+            console.error("Compartilhar falhou:", err);
+        } finally {
+            centerRow();
+        }
+    };
+
+    const handleAddToGoogleCalendar = (e) => {
+        e.stopPropagation();
+        const url = getGoogleCalendar(task);
+        window.open(url, "_blank", "noopener");
+        centerRow();
     };
 
     return (
@@ -358,9 +381,8 @@ function TaskRow({
             {menuOpen &&
                 createPortal(
                     <>
-                        {/* Backdrop fecha o menu */}
                         <div
-                            onClick={() => setMenuOpen(false)}
+                            onClick={() => centerRow({ closeMenu: true })}
                             style={{
                                 position: "fixed",
                                 inset: 0,
@@ -444,15 +466,69 @@ function TaskRow({
                                     </span>
                                     Copiar informações
                                 </button>
+
+                                <button
+                                    type="button"
+                                    role="menuitem"
+                                    className="menu-item"
+                                    style={{
+                                        width: "100%",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: 8,
+                                        padding: "8px 10px",
+                                        background: "transparent",
+                                        border: "none",
+                                        cursor: "pointer",
+                                        borderRadius: 6,
+                                        color: "var(--primary-text-color)",
+                                        fontSize: 14,
+                                    }}
+                                    onClick={handleShareTask}
+                                >
+                                    <span className="material-symbols-outlined">
+                                        share
+                                    </span>
+                                    Compartilhar
+                                </button>
+
+                                <button
+                                    type="button"
+                                    role="menuitem"
+                                    className="menu-item"
+                                    style={{
+                                        width: "100%",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: 8,
+                                        padding: "8px 10px",
+                                        background: "transparent",
+                                        border: "none",
+                                        cursor: "pointer",
+                                        borderRadius: 6,
+                                        color: "var(--primary-text-color)",
+                                        fontSize: 14,
+                                    }}
+                                    onClick={handleAddToGoogleCalendar}
+                                >
+                                    <span className="material-symbols-outlined">
+                                        calendar_add_on
+                                    </span>
+                                    Adicionar ao Google Agenda
+                                </button>
                             </motion.div>
                         </AnimatePresence>
                     </>,
-                    document.body,
+                    document.body
                 )}
 
             <motion.div
                 layout
-                className={`task-card ${isExpanded ? "expanded" : ""} ${task.done ? "concluida" : ""} ${flashingId === task.id ? "anim-reflexo" : ""} d-flex flex-row justify-space-between gap-5`}
+                className={`task-card ${isExpanded ? "expanded" : ""} ${
+                    task.done ? "concluida" : ""
+                } ${
+                    flashingId === task.id ? "anim-reflexo" : ""
+                } d-flex flex-row justify-space-between gap-5`}
                 initial={false}
                 style={{ x, opacity: opacityMV, overflow: "hidden" }}
                 drag="x"
@@ -485,7 +561,10 @@ function TaskRow({
                     >
                         <div className="d-flex flex-column">
                             <div className="d-flex flex-row">
-                                <div className="d-flex flex-column sync-status" style={{ marginTop: '1px' }}>
+                                <div
+                                    className="d-flex flex-column sync-status"
+                                    style={{ marginTop: "1px" }}
+                                >
                                     {task.synced ? (
                                         <span className="material-symbols-outlined">
                                             cloud_done
@@ -699,9 +778,66 @@ function Tasks() {
             document.removeEventListener(
                 "pointerdown",
                 handleGlobalPointerDown,
-                { capture: true },
+                { capture: true }
             );
     }, [openSwipeId]);
+
+    // mantém o título original para restaurar depois (fallback)
+    const baseTitleRef = useRef(
+        typeof document !== "undefined" ? document.title : ""
+    );
+
+    async function updateAppBadge(count) {
+        // ❶ Fallback SEMPRE visível: prefixa o título da janela/aba
+        if (typeof document !== "undefined") {
+            document.title =
+                count > 0
+                    ? `(${count}) ${baseTitleRef.current}`
+                    : baseTitleRef.current;
+        }
+
+        // ❷ Badge nativo (PWA instalado) – só funciona onde houver suporte do Chromium + SO
+        const setBadge =
+            navigator.setAppBadge || navigator.setExperimentalAppBadge;
+        const clearBadge =
+            navigator.clearAppBadge || navigator.clearExperimentalAppBadge;
+        if (!setBadge || !clearBadge) return; // sem suporte, ficamos só no título
+
+        try {
+            if (count > 0) await setBadge.call(navigator, count);
+            else await clearBadge.call(navigator);
+        } catch (e) {
+            console.warn("Falha ao aplicar App Badge nativo:", e);
+            // Se falhar, o fallback do título acima já garante feedback visual.
+        }
+    }
+
+    useEffect(() => {
+        const refresh = () => {
+            const num = tasks.filter(
+                (t) => !t?.done && t?._deleted !== true
+            ).length;
+            updateAppBadge(num);
+        };
+        document.addEventListener("visibilitychange", refresh);
+        window.addEventListener("focus", refresh);
+        return () => {
+            document.removeEventListener("visibilitychange", refresh);
+            window.removeEventListener("focus", refresh);
+        };
+    }, [tasks]);
+
+    useEffect(() => {
+        return () => {
+            try {
+                if ("clearAppBadge" in navigator) navigator.clearAppBadge();
+                else if ("clearExperimentalAppBadge" in navigator)
+                    navigator.clearExperimentalAppBadge();
+            } catch {}
+            if (typeof document !== "undefined")
+                document.title = baseTitleRef.current;
+        };
+    }, []);
 
     async function syncAndReload() {
         await syncTasks();

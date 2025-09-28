@@ -7,12 +7,12 @@ export default function Navbar() {
             <Link to="/" className={pathname === "/" ? "active" : ""}>
                 <span className="material-symbols-outlined">home</span>
             </Link>
-            <Link
+            {/* <Link
                 to="/dashboard"
                 className={pathname === "/dashboard" ? "active" : ""}
             >
                 <span className="material-symbols-outlined">dashboard</span>
-            </Link>
+            </Link> */}
         </nav>
     );
 }
