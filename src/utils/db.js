@@ -1,4 +1,5 @@
 import { openDB } from "idb";
+import { gaLog } from "./firebase";
 
 const DB_NAME = "tasker-db";
 const STORE_NAME = "tasks";
@@ -78,6 +79,7 @@ export async function updateTaskDone(taskId, done) {
     task.synced = false;
     await store.put(task);
     await tx.done;
+    gaLog("task_marked_done", { done });
 }
 
 export async function markTaskDeleted(taskId) {
@@ -94,6 +96,7 @@ export async function markTaskDeleted(taskId) {
     task.lastUpdated = new Date().toISOString();
     await store.put(task);
     await tx.done;
+    gaLog("task_deleted");
 }
 
 export async function hardDeleteTask(taskId) {

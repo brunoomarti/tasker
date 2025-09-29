@@ -19,6 +19,13 @@ import {
     serverTimestamp,
     deleteDoc,
 } from "firebase/firestore";
+import {
+    getAnalytics,
+    isSupported,
+    logEvent,
+    setUserId,
+    setUserProperties,
+} from "firebase/analytics";
 
 const TASKS_COLLECTION = "tasks";
 const USERS_COLLECTION = "users";
@@ -36,6 +43,35 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 export const auth = getAuth(app);
+
+let analytics = null;
+(async () => {
+    try {
+        if (typeof window !== "undefined" && firebaseConfig.measurementId) {
+            const ok = await isSupported().catch(() => false);
+            if (ok) analytics = getAnalytics(app);
+        }
+    } catch {}
+})();
+
+// Helper para logar eventos com segurança
+export function gaLog(name, params = {}) {
+    try {
+        if (analytics) logEvent(analytics, name, params);
+    } catch {}
+}
+
+// (opcional) vincular user_id quando logar
+export function gaSetUser(uid) {
+    try {
+        if (analytics && uid) setUserId(analytics, uid);
+    } catch {}
+}
+export function gaSetProps(props) {
+    try {
+        if (analytics && props) setUserProperties(analytics, props);
+    } catch {}
+}
 
 export function logIn(email, password) {
     return signInWithEmailAndPassword(auth, email, password);

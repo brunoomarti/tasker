@@ -5,6 +5,7 @@ import { addTask } from "../../utils/db.js";
 import { getUserLocation, listenTaskByVoice } from "../../utils/native.js";
 import { syncTasks } from "../../utils/sync.js";
 import { extractWhenPTBR } from "../../utils/nlp.js";
+import { gaLog, gaSetUser } from "../../utils/firebase.js";
 
 function getTodayYYYYMMDD() {
     const d = new Date();
@@ -197,9 +198,17 @@ export default function MagicTaskInput({
         if (!text.trim()) return;
         setIsSubmitting(true);
         try {
+            if (currentUser?.uid) gaSetUser(currentUser.uid);
             const task = await buildTaskFromText(text);
             await addTask(task);
             if (navigator.onLine) await syncTasks();
+
+            gaLog("task_created", {
+                has_description: false,
+                has_time: !!task.hora,
+                title_length: (task.title || "").length,
+                offline: !navigator.onLine,
+            });
 
             const isToday = task.data === getTodayYYYYMMDD();
             if (isToday) onCreated?.(task);

@@ -6,6 +6,7 @@ import { getUserLocation } from "../../utils/native";
 import { syncTasks } from "../../utils/sync";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
+import { gaLog, gaSetUser } from "../../utils/firebase";
 
 function getTodayYYYYMMDD() {
     const d = new Date();
@@ -86,9 +87,22 @@ function NovaTarefa() {
         }
         try {
             setIsSubmitting(true);
+
+            // garanta user no analytics
+            if (currentUser?.uid) gaSetUser(currentUser.uid);
+
             const task = await buildTask();
             await addTask(task);
-            if (navigator.onLine) await syncTasks();
+
+            // 🔵 REGISTRA EVENTO DE ENGajAMENTO: criação de tarefa
+            gaLog("task_created", {
+                has_description: !!descricao,
+                has_time: !!horaStr,
+                title_length: (titulo || "").length,
+                offline: !navigator.onLine,
+            });
+
+            if (navigator.onLine) await syncTasks(); // (ver item “sync” abaixo)
             await notifyNewTask(titulo, horaStr);
             return true;
         } catch (err) {
